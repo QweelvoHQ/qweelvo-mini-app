@@ -19,6 +19,10 @@ i18n
     },
   });
 
+// Initial direction and language
+document.documentElement.dir = 'rtl';
+document.documentElement.lang = 'ar';
+
 // Update document direction based on language
 i18n.on('languageChanged', (lng) => {
   const dir = lng === 'ar' ? 'rtl' : 'ltr';

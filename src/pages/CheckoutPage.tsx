@@ -178,7 +178,10 @@ const CheckoutPage = () => {
               <label className="text-sm text-muted-foreground mb-1 block">{t('checkout.phone')}</label>
               <input
                 value={checkout.phone}
-                onChange={(e) => dispatch(setPhone(e.target.value))}
+                onChange={(e) => {
+                  const val = e.target.value.replace(/[^0-9]/g, '');
+                  dispatch(setPhone(val));
+                }}
                 placeholder={t('checkout.phonePlaceholder')}
                 type="tel"
                 dir="ltr"

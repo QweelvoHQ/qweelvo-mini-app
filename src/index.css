@@ -61,12 +61,12 @@
 
   body {
     @apply bg-background text-foreground antialiased;
-    font-family: var(--font-en);
+    font-family: var(--font-ar);
   }
 
-  [dir="rtl"] body,
-  [dir="rtl"] {
-    font-family: var(--font-ar);
+  [dir="ltr"] body,
+  [dir="ltr"] {
+    font-family: var(--font-en);
   }
 }
 
