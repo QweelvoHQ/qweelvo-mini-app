@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { motion } from 'framer-motion';
@@ -11,16 +11,36 @@ import PageHeader from '@/shared/components/PageHeader';
 import PageTransition from '@/shared/components/PageTransition';
 import Stepper from '@/shared/components/Stepper';
 import { toast } from 'sonner';
+import { cartService } from '@/services/cartService';
 
 const BranchPage = () => {
   const { t, i18n } = useTranslation();
   const navigate = useNavigate();
   const dispatch = useAppDispatch();
   const { branches, isLoading, error } = useAppSelector((s) => s.branch);
+  const token = useAppSelector((s) => s.session.token);
   const isAr = i18n.language === 'ar';
 
   const [locationStr, setLocationStr] = useState('');
-  
+
+  useEffect(() => {
+    const fetchInitialBranches = async () => {
+      dispatch(setBranchLoading(true));
+      try {
+        const result = await sessionService.getNearestBranches('madinah');
+        dispatch(setBranches(result));
+      } catch (err) {
+        dispatch(setBranchError('Failed to fetch branches'));
+      }
+    };
+
+    if (!branches || branches.length === 0) {
+      if (!error && !isLoading) {
+        fetchInitialBranches();
+      }
+    }
+  }, [dispatch, branches, error, isLoading]);
+
   const handleSearch = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!locationStr.trim()) return;
@@ -48,6 +68,19 @@ const BranchPage = () => {
     
     try {
       await sessionService.confirmBranch(branch.id);
+      
+      if (token) {
+        try {
+          const cartItems = await cartService.getCart(token);
+          if (cartItems && cartItems.length > 0) {
+            navigate('/checkout');
+            return;
+          }
+        } catch (err) {
+          console.error("Failed to fetch cart", err);
+        }
+      }
+      
       navigate('/menu');
     } catch (err) {
       toast.error(isAr ? 'فشل في تأكيد الفرع' : 'Failed to confirm branch');
@@ -87,31 +120,31 @@ const BranchPage = () => {
         )}
 
         <div className="space-y-3">
-          {branches.map((branch, i) => (
+          {(branches || []).map((branch, i) => (
             <motion.button
               key={branch.id}
               initial={{ opacity: 0, y: 10 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ delay: i * 0.08 }}
               onClick={() => handleSelect(branch)}
-              disabled={!branch.isOpen}
+              disabled={branch.isOpen === false}
               className={`w-full text-start p-4 rounded-xl border transition-all ${
-                branch.isOpen
+                branch.isOpen !== false
                   ? 'bg-card border-border hover:border-primary hover:shadow-md cursor-pointer'
                   : 'bg-muted border-border opacity-60 cursor-not-allowed'
               }`}
             >
               <div className="flex items-start justify-between">
                 <div>
-                  <h3 className="font-semibold text-foreground">{isAr ? branch.nameAr : branch.name}</h3>
+                  <h3 className="font-semibold text-foreground">{isAr ? branch.nameAr || branch.name : branch.name}</h3>
                   <p className="text-sm text-muted-foreground mt-1 flex items-center gap-1">
                     <MapPin className="w-3.5 h-3.5" />
-                    {isAr ? branch.addressAr : branch.address}
+                    {isAr ? branch.addressAr || branch.location : branch.address || branch.location}
                   </p>
                 </div>
                 <div className="flex flex-col items-end gap-1">
-                  <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${branch.isOpen ? 'bg-success/10 text-success' : 'bg-destructive/10 text-destructive'}`}>
-                    {branch.isOpen ? t('branch.open') : t('branch.closed')}
+                  <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${branch.isOpen !== false ? 'bg-success/10 text-success' : 'bg-destructive/10 text-destructive'}`}>
+                    {branch.isOpen !== false ? t('branch.open') : t('branch.closed')}
                   </span>
                   {branch.distance && (
                     <span className="text-xs text-muted-foreground flex items-center gap-1">
@@ -123,7 +156,7 @@ const BranchPage = () => {
             </motion.button>
           ))}
           
-          {branches.length === 0 && !isLoading && !error && (
+          {(!branches || branches.length === 0) && !isLoading && !error && (
              <div className="text-center py-10 opacity-60">
                 <MapPin className="w-12 h-12 mx-auto mb-3 text-muted-foreground" />
                 <p>{isAr ? 'قم بالبحث عن الفروع القريبة' : 'Search for nearby branches'}</p>

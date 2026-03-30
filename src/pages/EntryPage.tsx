@@ -19,6 +19,7 @@ const EntryPage = () => {
   const dispatch = useAppDispatch();
   const sessionStatus = useAppSelector(state => state.session.status);
   const termsAccepted = useAppSelector(state => state.session.termsAccepted);
+  const info = useAppSelector(state => state.session.info);
   const { t } = useTranslation();
 
   useEffect(() => {
@@ -56,14 +57,13 @@ const EntryPage = () => {
   // Handle routing as a separate effect so we wait for Terms Modal to complete
   useEffect(() => {
     if (sessionStatus === 'valid' && termsAccepted) {
-      const info = useAppSelector(state => state.session.info);
       if (info && info.branchId) {
          navigate('/menu');
       } else {
          navigate('/branches');
       }
     }
-  }, [sessionStatus, termsAccepted, navigate]);
+  }, [sessionStatus, termsAccepted, navigate, info]);
 
 
   if (!token || ['invalid', 'expired'].includes(sessionStatus)) {

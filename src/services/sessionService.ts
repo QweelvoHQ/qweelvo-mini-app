@@ -20,9 +20,10 @@ export const sessionService = {
     await api.post('/sessions/detect-location', { location });
   },
   
-  getNearestBranches: async (location: string): Promise<Branch[]> => {
-    const res = await api.get(`/sessions/nearest-branches?location=${encodeURIComponent(location)}`);
-    return res.data.data;
+  getNearestBranches: async (location?: string): Promise<Branch[]> => {
+    const query = location ? `?location=${encodeURIComponent(location)}` : '';
+    const res = await api.get(`/sessions/nearest-branches${query}`);
+    return res.data?.data?.branches || [];
   },
   
   confirmBranch: async (branchId: string): Promise<void> => {
