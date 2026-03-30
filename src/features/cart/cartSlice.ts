@@ -1,49 +1,42 @@
 import { createSlice, PayloadAction } from '@reduxjs/toolkit';
-
-export interface CartItem {
-  id: string;
-  productId: string;
-  name: string;
-  nameAr: string;
-  price: number;
-  quantity: number;
-  modifiers: { name: string; nameAr: string; price: number }[];
-}
+import { CartItem, CartSummary } from '@/types/session';
 
 interface CartState {
   items: CartItem[];
+  summary: CartSummary | null;
+  isLoading: boolean;
+  error: string | null;
 }
 
 const initialState: CartState = {
   items: [],
+  summary: null,
+  isLoading: false,
+  error: null,
 };
 
 const cartSlice = createSlice({
   name: 'cart',
   initialState,
   reducers: {
-    addItem(state, action: PayloadAction<Omit<CartItem, 'id'>>) {
-      const { productId, modifiers } = action.payload;
-      
-      const existingItem = state.items.find((item) => {
-        if (item.productId !== productId) return false;
-        
-        // Compare modifiers
-        if (item.modifiers.length !== modifiers.length) return false;
-        
-        // Sort and stringify modifiers for exact comparison
-        const existingMods = JSON.stringify([...item.modifiers].sort((a,b) => a.name.localeCompare(b.name)));
-        const newMods = JSON.stringify([...modifiers].sort((a,b) => a.name.localeCompare(b.name)));
-        
-        return existingMods === newMods;
-      });
-
-      if (existingItem) {
-        existingItem.quantity += action.payload.quantity;
-      } else {
-        const id = `${productId}-${Date.now()}`;
-        state.items.push({ ...action.payload, id });
-      }
+    setCart(state, action: PayloadAction<CartItem[]>) {
+      state.items = action.payload;
+      state.isLoading = false;
+      state.error = null;
+    },
+    setCartSummary(state, action: PayloadAction<CartSummary>) {
+      state.summary = action.payload;
+    },
+    setCartLoading(state, action: PayloadAction<boolean>) {
+      state.isLoading = action.payload;
+    },
+    setCartError(state, action: PayloadAction<string>) {
+      state.error = action.payload;
+      state.isLoading = false;
+    },
+    // Optimistic local updates
+    addItem(state, action: PayloadAction<CartItem>) {
+      state.items.push(action.payload);
     },
     removeItem(state, action: PayloadAction<string>) {
       state.items = state.items.filter((i) => i.id !== action.payload);
@@ -60,17 +53,30 @@ const cartSlice = createSlice({
     },
     clearCart(state) {
       state.items = [];
+      state.summary = null;
     },
   },
 });
 
-export const { addItem, removeItem, updateQuantity, clearCart } = cartSlice.actions;
+export const { 
+  setCart, 
+  setCartSummary, 
+  setCartLoading, 
+  setCartError, 
+  addItem, 
+  removeItem, 
+  updateQuantity, 
+  clearCart 
+} = cartSlice.actions;
 
-export const selectCartTotal = (state: { cart: CartState }) =>
-  state.cart.items.reduce((sum, item) => {
+// Local calculate fallbacks if summary isn't fully loaded
+export const selectCartTotal = (state: { cart: CartState }) => {
+  if (state.cart.summary) return state.cart.summary.total;
+  return state.cart.items.reduce((sum, item) => {
     const modifiersTotal = item.modifiers.reduce((m, mod) => m + mod.price, 0);
     return sum + (item.price + modifiersTotal) * item.quantity;
-  }, 0);
+  }, 0); 
+};
 
 export const selectCartItemCount = (state: { cart: CartState }) =>
   state.cart.items.reduce((sum, item) => sum + item.quantity, 0);

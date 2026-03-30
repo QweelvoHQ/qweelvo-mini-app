@@ -28,8 +28,9 @@ const App = () => (
         <BrowserRouter>
           <AnimatePresence mode="wait">
             <Routes>
-              <Route path="/" element={<Navigate to="/session/demo" replace />} />
+              <Route path="/" element={<Navigate to="/brand_demo/session/demo" replace />} />
               <Route path="/session/:token" element={<EntryPage />} />
+              <Route path="/:brand/session/:token" element={<EntryPage />} />
               <Route path="/branches" element={<BranchPage />} />
               <Route path="/menu" element={<MenuPage />} />
               <Route path="/product/:id" element={<ProductPage />} />

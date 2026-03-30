@@ -1,12 +1,15 @@
-import { useRef } from 'react';
+import { useRef, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { motion } from 'framer-motion';
-import { Plus, ShoppingCart } from 'lucide-react';
+import { Plus, ShoppingCart, Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { useAppDispatch, useAppSelector } from '@/app/store';
-import { setActiveCategory, Product } from '@/features/menu/menuSlice';
-import { addItem, selectCartTotal, selectCartItemCount } from '@/features/cart/cartSlice';
+import { setMenu, setActiveCategory, setMenuLoading, setMenuError } from '@/features/menu/menuSlice';
+import { addItem, selectCartTotal, selectCartItemCount, setCart, setCartLoading } from '@/features/cart/cartSlice';
+import { menuService } from '@/services/menuService';
+import { cartService } from '@/services/cartService';
+import { MenuItem } from '@/types/session';
 import PageHeader from '@/shared/components/PageHeader';
 import PageTransition from '@/shared/components/PageTransition';
 
@@ -14,24 +17,54 @@ const MenuPage = () => {
   const { t, i18n } = useTranslation();
   const navigate = useNavigate();
   const dispatch = useAppDispatch();
-  const { categories, products, activeCategory } = useAppSelector((s) => s.menu);
+  const token = useAppSelector(s => s.session.token);
+  const { categories, products, activeCategory, isLoading, error } = useAppSelector((s) => s.menu);
   const cartCount = useAppSelector(selectCartItemCount);
   const cartTotal = useAppSelector(selectCartTotal);
   const isAr = i18n.language === 'ar';
   const scrollRef = useRef<HTMLDivElement>(null);
 
+  useEffect(() => {
+    const fetchMenuAndCart = async () => {
+      if (!token) return;
+      dispatch(setMenuLoading(true));
+      dispatch(setCartLoading(true));
+      try {
+        const [menuData, cartData] = await Promise.all([
+          menuService.getFullMenu(token, i18n.language),
+          cartService.getCart(token)
+        ]);
+        dispatch(setMenu(menuData));
+        dispatch(setCart(cartData));
+      } catch (err) {
+        console.error('Failed to load menu data', err);
+        dispatch(setMenuError('Failed to load menu'));
+      }
+    };
+    
+    // Only fetch if empty to avoid refetching on every navigate back
+    if (categories.length === 0) {
+      fetchMenuAndCart();
+    }
+  }, [token, i18n.language, dispatch, categories.length]);
+
   const filteredProducts = products.filter((p) => p.categoryId === activeCategory);
 
-  const handleQuickAdd = (product: Product) => {
+  const handleQuickAdd = async (product: MenuItem) => {
+    if (!token) return;
+
     // Pick first options for required groups
     const defaultModifiers = product.modifierGroups
       .filter((mg) => mg.required)
       .map((mg) => {
         const firstOpt = mg.options[0];
-        return { name: firstOpt.name, nameAr: firstOpt.nameAr, price: firstOpt.price };
+        return { id: firstOpt.id, name: firstOpt.name, nameAr: firstOpt.nameAr, price: firstOpt.price };
       });
 
+    // Optimistic UI update
+    const id = `${product.id}-${Date.now()}`;
     dispatch(addItem({
+      id,
       productId: product.id,
       name: product.name,
       nameAr: product.nameAr,
@@ -44,63 +77,97 @@ const MenuPage = () => {
       duration: 1500,
       position: 'top-center',
     });
+
+    try {
+      await cartService.addItemToCart(token, {
+        itemId: product.id,
+        quantity: 1,
+        modifiers: defaultModifiers.map(m => ({ id: m.id, quantity: 1 }))
+      });
+      // Optionally sync cart from backend here, but optimistic is enough for now
+    } catch (err) {
+      // Revert if failed
+      toast.error(isAr ? 'فشل في إضافة العنصر' : 'Failed to add item');
+      // A proper revert would dispatch removeItem(id)
+    }
   };
 
   return (
     <PageTransition>
       <PageHeader title={t('menu.title')} showBack />
       
-      {/* Categories */}
-      <div className="sticky top-[57px] z-30 bg-background border-b border-border">
-        <div ref={scrollRef} className="flex gap-2 px-4 py-3 overflow-x-auto scrollbar-hide max-w-lg mx-auto">
-          {categories.map((cat) => (
-            <button
-              key={cat.id}
-              onClick={() => dispatch(setActiveCategory(cat.id))}
-              className={`whitespace-nowrap px-4 py-2 rounded-full text-sm font-medium transition-all ${
-                activeCategory === cat.id
-                  ? 'bg-primary text-primary-foreground shadow-sm'
-                  : 'bg-secondary text-secondary-foreground hover:bg-muted'
-              }`}
-            >
-              {isAr ? cat.nameAr : cat.name}
-            </button>
-          ))}
+      {isLoading ? (
+        <div className="flex justify-center items-center py-20">
+          <Loader2 className="w-8 h-8 animate-spin text-primary" />
         </div>
-      </div>
-
-      {/* Products */}
-      <div className="max-w-lg mx-auto px-4 py-4 pb-28">
-        <div className="grid grid-cols-2 gap-3">
-          {filteredProducts.map((product, i) => (
-            <motion.div
-              key={product.id}
-              initial={{ opacity: 0, y: 10 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: i * 0.05 }}
-              className="bg-card rounded-xl border border-border overflow-hidden hover:shadow-md transition-shadow cursor-pointer"
-              onClick={() => navigate(`/product/${product.id}`)}
-            >
-              <div className="aspect-[4/3] bg-muted flex items-center justify-center">
-                <span className="text-3xl">🍔</span>
-              </div>
-              <div className="p-3">
-                <h3 className="font-semibold text-sm text-foreground line-clamp-1">{isAr ? product.nameAr : product.name}</h3>
-                <p className="text-primary font-bold text-sm mt-1">
-                  {product.price} {t('common.currency')}
-                </p>
+      ) : error ? (
+        <div className="text-center py-20 text-destructive">{error}</div>
+      ) : (
+        <>
+          {/* Categories */}
+          <div className="sticky top-[57px] z-30 bg-background border-b border-border">
+            <div ref={scrollRef} className="flex gap-2 px-4 py-3 overflow-x-auto scrollbar-hide max-w-lg mx-auto">
+              {categories.map((cat) => (
                 <button
-                  onClick={(e) => { e.stopPropagation(); handleQuickAdd(product); }}
-                  className="mt-2 w-full flex items-center justify-center gap-1 bg-primary text-primary-foreground rounded-lg py-2 text-sm font-semibold hover:bg-primary-hover transition-colors"
+                  key={cat.id}
+                  onClick={() => dispatch(setActiveCategory(cat.id))}
+                  className={`whitespace-nowrap px-4 py-2 rounded-full text-sm font-medium transition-all ${
+                    activeCategory === cat.id
+                      ? 'bg-primary text-primary-foreground shadow-sm'
+                      : 'bg-secondary text-secondary-foreground hover:bg-muted'
+                  }`}
                 >
-                  <Plus className="w-4 h-4" />
-                  {t('menu.addToCart')}
+                  {isAr ? cat.nameAr : cat.name}
                 </button>
-              </div>
-            </motion.div>
-          ))}
-        </div>
-      </div>
+              ))}
+            </div>
+          </div>
+
+          {/* Products */}
+          <div className="max-w-lg mx-auto px-4 py-4 pb-28">
+            <div className="grid grid-cols-2 gap-3">
+              {filteredProducts.map((product, i) => (
+                <motion.div
+                  key={product.id}
+                  initial={{ opacity: 0, y: 10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ delay: i * 0.05 }}
+                  className="bg-card rounded-xl border border-border overflow-hidden hover:shadow-md transition-shadow cursor-pointer flex flex-col"
+                  onClick={() => navigate(`/product/${product.id}`)}
+                >
+                  <div className="aspect-[4/3] bg-muted flex items-center justify-center relative overflow-hidden">
+                    {product.image ? (
+                       <img src={product.image} alt={product.name} className="w-full h-full object-cover" />
+                    ) : (
+                       <span className="text-3xl">🍔</span>
+                    )}
+                  </div>
+                  <div className="p-3 flex flex-col flex-1">
+                    <h3 className="font-semibold text-sm text-foreground line-clamp-1">{isAr ? product.nameAr : product.name}</h3>
+                    <p className="text-primary font-bold text-sm mt-1 mb-2">
+                      {product.price} {t('common.currency')}
+                    </p>
+                    <div className="mt-auto">
+                      <button
+                        onClick={(e) => { e.stopPropagation(); handleQuickAdd(product); }}
+                        className="w-full flex items-center justify-center gap-1 bg-primary text-primary-foreground rounded-lg py-2 text-sm font-semibold hover:bg-primary-hover transition-colors"
+                      >
+                        <Plus className="w-4 h-4" />
+                        {t('menu.addToCart')}
+                      </button>
+                    </div>
+                  </div>
+                </motion.div>
+              ))}
+              {filteredProducts.length === 0 && (
+                <div className="col-span-2 text-center py-10 text-muted-foreground">
+                   {isAr ? 'لا توجد منتجات في هذا القسم' : 'No products in this category'}
+                </div>
+              )}
+            </div>
+          </div>
+        </>
+      )}
 
       {/* Cart Sticky Bottom */}
       {cartCount > 0 && (

@@ -1,38 +1,41 @@
 import { createSlice, PayloadAction } from '@reduxjs/toolkit';
-
-export interface Branch {
-  id: string;
-  name: string;
-  nameAr: string;
-  address: string;
-  addressAr: string;
-  isOpen: boolean;
-  distance?: string;
-}
+import { Branch } from '@/types/session';
 
 interface BranchState {
   branches: Branch[];
   selectedBranch: Branch | null;
+  isLoading: boolean;
+  error: string | null;
 }
 
 const initialState: BranchState = {
-  branches: [
-    { id: '1', name: 'Downtown Branch', nameAr: 'فرع وسط المدينة', address: '123 Main St', addressAr: 'شارع الرئيسي 123', isOpen: true, distance: '1.2 km' },
-    { id: '2', name: 'Mall Branch', nameAr: 'فرع المول', address: '456 Mall Ave', addressAr: 'شارع المول 456', isOpen: true, distance: '3.5 km' },
-    { id: '3', name: 'Airport Branch', nameAr: 'فرع المطار', address: '789 Airport Rd', addressAr: 'طريق المطار 789', isOpen: false, distance: '12 km' },
-  ],
+  branches: [],
   selectedBranch: null,
+  isLoading: false,
+  error: null,
 };
 
 const branchSlice = createSlice({
   name: 'branch',
   initialState,
   reducers: {
+    setBranches(state, action: PayloadAction<Branch[]>) {
+      state.branches = action.payload;
+      state.isLoading = false;
+      state.error = null;
+    },
     selectBranch(state, action: PayloadAction<Branch>) {
       state.selectedBranch = action.payload;
     },
+    setBranchLoading(state, action: PayloadAction<boolean>) {
+      state.isLoading = action.payload;
+    },
+    setBranchError(state, action: PayloadAction<string>) {
+      state.error = action.payload;
+      state.isLoading = false;
+    }
   },
 });
 
-export const { selectBranch } = branchSlice.actions;
+export const { setBranches, selectBranch, setBranchLoading, setBranchError } = branchSlice.actions;
 export default branchSlice.reducer;

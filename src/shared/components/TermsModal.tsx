@@ -1,23 +1,34 @@
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { motion, AnimatePresence } from 'framer-motion';
 import { ShieldCheck, AlertCircle } from 'lucide-react';
+import { useAppDispatch, useAppSelector } from '@/app/store';
+import { setTermsAccepted } from '@/features/session/sessionSlice';
+import { sessionService } from '@/services/sessionService';
 
 const TermsModal = () => {
   const { t } = useTranslation();
-  const [isOpen, setIsOpen] = useState(false);
+  const dispatch = useAppDispatch();
+  const sessionStatus = useAppSelector(state => state.session.status);
+  const termsAccepted = useAppSelector(state => state.session.termsAccepted);
+  
+  const isOpen = sessionStatus === 'valid' && !termsAccepted;
+  
   const [isDeclined, setIsDeclined] = useState(false);
+  const [isAccepting, setIsAccepting] = useState(false);
 
-  useEffect(() => {
-    const accepted = localStorage.getItem('qweelvo_terms_accepted');
-    if (!accepted) {
-      setIsOpen(true);
+  const handleAccept = async () => {
+    setIsAccepting(true);
+    try {
+      await sessionService.acceptTerms();
+      dispatch(setTermsAccepted(true));
+    } catch (err) {
+      console.error('Failed to accept terms', err);
+      // fallback in case of demo or error
+      dispatch(setTermsAccepted(true));
+    } finally {
+      setIsAccepting(false);
     }
-  }, []);
-
-  const handleAccept = () => {
-    localStorage.setItem('qweelvo_terms_accepted', 'true');
-    setIsOpen(false);
   };
 
   const handleDecline = () => {
@@ -44,7 +55,6 @@ const TermsModal = () => {
               exit={{ opacity: 0, scale: 0.9, y: 20 }}
               className="w-full max-w-sm bg-card rounded-[2.5rem] p-8 shadow-2xl border border-border relative overflow-hidden"
             >
-              {/* Decorative background element */}
               <div className="absolute top-0 right-0 w-32 h-32 bg-primary/5 rounded-full -mr-16 -mt-16 blur-3xl" />
               <div className="absolute bottom-0 left-0 w-32 h-32 bg-primary/5 rounded-full -ml-16 -mb-16 blur-3xl" />
 
@@ -66,12 +76,14 @@ const TermsModal = () => {
                     <div className="space-y-3">
                         <button
                             onClick={handleAccept}
-                            className="w-full bg-primary text-primary-foreground rounded-2xl py-4 font-bold text-lg hover:bg-primary-hover transition-all active:scale-[0.98] shadow-lg shadow-primary/20"
+                            disabled={isAccepting}
+                            className={`w-full bg-primary text-primary-foreground rounded-2xl py-4 font-bold text-lg transition-all shadow-lg shadow-primary/20 ${isAccepting ? 'opacity-70 cursor-not-allowed' : 'hover:bg-primary-hover active:scale-[0.98]'}`}
                         >
-                            {t('terms.accept')}
+                            {isAccepting ? t('common.loading') : t('terms.accept')}
                         </button>
                         <button
                             onClick={handleDecline}
+                            disabled={isAccepting}
                             className="w-full bg-secondary text-secondary-foreground rounded-2xl py-3 font-semibold text-base hover:bg-muted transition-all active:scale-[0.98]"
                         >
                             {t('terms.decline')}

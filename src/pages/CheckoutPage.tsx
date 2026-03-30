@@ -1,3 +1,4 @@
+import { useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { motion } from 'framer-motion';
@@ -8,7 +9,16 @@ import {
   setName, setPhone, setOrderType, setAddress, setPaymentMethod,
   setCheckoutStatus, setOrderNumber,
 } from '@/features/checkout/checkoutSlice';
-import { selectCartTotal, selectCartItemCount, clearCart, updateQuantity, removeItem } from '@/features/cart/cartSlice';
+import { 
+  selectCartTotal, 
+  selectCartItemCount, 
+  clearCart, 
+  updateQuantity, 
+  removeItem, 
+  setCartSummary 
+} from '@/features/cart/cartSlice';
+import { sessionService } from '@/services/sessionService';
+import { cartService } from '@/services/cartService';
 import PageHeader from '@/shared/components/PageHeader';
 import PageTransition from '@/shared/components/PageTransition';
 
@@ -18,26 +28,110 @@ const CheckoutPage = () => {
   const dispatch = useAppDispatch();
   const checkout = useAppSelector((s) => s.checkout);
   const items = useAppSelector((s) => s.cart.items);
+  const token = useAppSelector((s) => s.session.token);
+  const sessionInfo = useAppSelector((s) => s.session.info);
   const total = useAppSelector(selectCartTotal);
   const itemCount = useAppSelector(selectCartItemCount);
   const isAr = i18n.language === 'ar';
+
+  useEffect(() => {
+    // Sync cart summary and pre-fill customer info if available
+    const initCheckout = async () => {
+      if (!token) return;
+      
+      try {
+        const summary = await cartService.getCartSummary(token);
+        dispatch(setCartSummary(summary));
+      } catch (err) {
+        console.error('Failed to get cart summary', err);
+      }
+
+      // Pre-fill user data
+      const info = useAppSelector.withTypes<{ session: { customerInfo: any } }>()(s => s.session.customerInfo);
+      if (info) {
+        if (!checkout.name) dispatch(setName(info.name || ''));
+        if (!checkout.phone) dispatch(setPhone(info.phone || ''));
+        if (!checkout.address) dispatch(setAddress(info.address || ''));
+      }
+    };
+
+    initCheckout();
+  }, [token, dispatch, checkout.name, checkout.phone, checkout.address]);
 
   const isValid = checkout.name.trim() && checkout.phone.trim() && itemCount > 0
     && (checkout.orderType === 'pickup' || checkout.address.trim());
 
   const handlePay = async () => {
-    if (checkout.status === 'processing') return;
+    if (checkout.status === 'processing' || !token) return;
+    
+    if (!isValid) {
+      toast.error(isAr ? 'يرجى تعبئة جميع الحقول المطلوبة' : 'Please fill all required fields');
+      return;
+    }
+
     dispatch(setCheckoutStatus('processing'));
 
-    // Simulate payment
-    setTimeout(() => {
+    try {
+      // 1. Update customer info based on order type
+      await sessionService.updateCustomerInfo({
+        name: checkout.name,
+        phone: checkout.phone,
+        address: checkout.orderType === 'delivery' ? checkout.address : undefined,
+      });
+
+      // 2. Validate Cart
+      await cartService.validateCart(token);
+
+      // 3. Complete Session
+      await sessionService.completeSession();
+
       const orderNum = `QW-${Math.random().toString(36).substring(2, 8).toUpperCase()}`;
       dispatch(setOrderNumber(orderNum));
       dispatch(setCheckoutStatus('success'));
       dispatch(clearCart());
       toast.success(isAr ? 'تم تأكيد طلبك بنجاح' : 'Order placed successfully');
       navigate('/success');
-    }, 500);
+
+    } catch (err) {
+      console.error('Checkout failed', err);
+      dispatch(setCheckoutStatus('error'));
+      toast.error(isAr ? 'حدث خطأ أثناء معالجة الطلب' : 'Error processing your order');
+    }
+  };
+
+  const handleUpdateQuantity = async (id: string, newQuantity: number, itemId?: string) => {
+    if (!token) return;
+    
+    // Optimistic
+    dispatch(updateQuantity({ id, quantity: newQuantity }));
+
+    try {
+      if (newQuantity <= 0 && itemId) {
+         await cartService.removeCartItem(token, itemId);
+      } else if (itemId) {
+         await cartService.updateCartItem(token, itemId, { quantity: newQuantity });
+      }
+      
+      // Update summary
+      const summary = await cartService.getCartSummary(token);
+      dispatch(setCartSummary(summary));
+    } catch (err) {
+      toast.error(isAr ? 'فشل التحديث' : 'Update failed');
+    }
+  };
+
+  const handleRemove = async (id: string, itemId?: string) => {
+    if (!token) return;
+    dispatch(removeItem(id));
+    if (itemId) {
+      try {
+        await cartService.removeCartItem(token, itemId);
+        const summary = await cartService.getCartSummary(token);
+        dispatch(setCartSummary(summary));
+      } catch (err) {
+        toast.error(isAr ? 'فشل في إزالة العنصر' : 'Failed to remove item');
+      }
+    }
   };
 
   return (
@@ -162,16 +256,16 @@ const CheckoutPage = () => {
                       )}
                       <p className="text-primary font-bold text-xs mt-1">{itemTotal} {t('common.currency')}</p>
                     </div>
-                    <button onClick={() => dispatch(removeItem(item.id))} className="p-1.5 text-destructive hover:bg-destructive/10 rounded-lg transition-colors">
+                    <button onClick={() => handleRemove(item.id, item.productId)} className="p-1.5 text-destructive hover:bg-destructive/10 rounded-lg transition-colors">
                       <Trash2 className="w-3.5 h-3.5" />
                     </button>
                   </div>
                   <div className="flex items-center gap-3 mt-2">
-                    <button onClick={() => dispatch(updateQuantity({ id: item.id, quantity: item.quantity - 1 }))} className="w-7 h-7 rounded-full bg-secondary flex items-center justify-center hover:bg-muted transition-colors">
+                    <button onClick={() => handleUpdateQuantity(item.id, item.quantity - 1, item.productId)} className="w-7 h-7 rounded-full bg-secondary flex items-center justify-center hover:bg-muted transition-colors">
                       <Minus className="w-3 h-3" />
                     </button>
                     <span className="font-semibold text-foreground text-xs w-5 text-center">{item.quantity}</span>
-                    <button onClick={() => dispatch(updateQuantity({ id: item.id, quantity: item.quantity + 1 }))} className="w-7 h-7 rounded-full bg-primary text-primary-foreground flex items-center justify-center hover:bg-primary-hover transition-colors">
+                    <button onClick={() => handleUpdateQuantity(item.id, item.quantity + 1, item.productId)} className="w-7 h-7 rounded-full bg-primary text-primary-foreground flex items-center justify-center hover:bg-primary-hover transition-colors">
                       <Plus className="w-3 h-3" />
                     </button>
                   </div>
@@ -198,7 +292,7 @@ const CheckoutPage = () => {
           </button>
           <button
             onClick={handlePay}
-            disabled={checkout.status === 'processing'}
+            disabled={checkout.status === 'processing' || !isValid}
             className="w-full bg-primary text-primary-foreground rounded-xl px-5 py-3.5 font-semibold hover:bg-primary-hover transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
           >
             {t('checkout.payNow')} • {total} {t('common.currency')}
