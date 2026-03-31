@@ -16,7 +16,7 @@ spec:
       serviceAccountName: qweelvo-mini-app-sa
       containers:
         - name: qweelvo-mini-app
-          image: ghcr.io/youssefalaa10/qweelvo-mini-app:sha-30c2c14
+          image: ghcr.io/QweelvoHQ/qweelvo-mini-app:sha-30c2c14
           imagePullPolicy: Always
           ports:
             - containerPort: 8000
