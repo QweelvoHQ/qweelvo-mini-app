@@ -10,7 +10,6 @@ RUN bun install
 
 # Copy source and build
 COPY . .
-ENV VITE_API_BASE_URL=http://qweelvo-order
 RUN bun run build
 
 # Production stage
